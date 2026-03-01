@@ -4,8 +4,24 @@ import tweepy
 import requests
 import os
 import google.generativeai as genai
+from flask import Flask
+from threading import Thread
 
-# --- SECURITY: READ KEYS FROM SERVER (NOT FILE) ---
+# --- SETUP FAKE WEBSITE (To keep Render happy) ---
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "I am alive!"
+
+def run():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run)
+    t.start()
+
+# --- BOT CONFIGURATION ---
 API_KEY = os.environ.get("API_KEY")
 API_SECRET = os.environ.get("API_SECRET")
 ACCESS_TOKEN = os.environ.get("ACCESS_TOKEN")
@@ -23,7 +39,7 @@ client = tweepy.Client(consumer_key=API_KEY, consumer_secret=API_SECRET, access_
 genai.configure(api_key=GEMINI_KEY)
 model = genai.GenerativeModel('gemini-pro')
 
-def main():
+def bot_logic():
     print("⚽️ Checking for news...")
     feed = feedparser.parse(RSS_URL)
     if not feed.entries: return
@@ -46,6 +62,7 @@ def main():
         print(f"Error: {e}")
 
 if __name__ == '__main__':
+    keep_alive()  # Start the fake website
     while True:
-        main()
-        time.sleep(900) # Check every 15 minutes
+        bot_logic() # Run the bot
+        time.sleep(900) # Sleep for 15 mins
