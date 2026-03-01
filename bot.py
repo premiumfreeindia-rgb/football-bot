@@ -6,22 +6,9 @@ import os
 import google.generativeai as genai
 from flask import Flask
 from threading import Thread
+import sys
 
-# --- SETUP FAKE WEBSITE (To keep Render happy) ---
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "I am alive!"
-
-def run():
-    app.run(host='0.0.0.0', port=8080)
-
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
-
-# --- BOT CONFIGURATION ---
+# --- CONFIGURATION ---
 API_KEY = os.environ.get("API_KEY")
 API_SECRET = os.environ.get("API_SECRET")
 ACCESS_TOKEN = os.environ.get("ACCESS_TOKEN")
@@ -39,30 +26,63 @@ client = tweepy.Client(consumer_key=API_KEY, consumer_secret=API_SECRET, access_
 genai.configure(api_key=GEMINI_KEY)
 model = genai.GenerativeModel('gemini-pro')
 
-def bot_logic():
-    print("⚽️ Checking for news...")
-    feed = feedparser.parse(RSS_URL)
-    if not feed.entries: return
-    latest = feed.entries[0]
-    
-    # AI Rewrite
-    try:
-        prompt = f"Rewrite this football headline into a viral tweet under 200 chars with emojis and hashtags. Do not include link: '{latest.title}'"
-        tweet = model.generate_content(prompt).text
-    except:
-        tweet = f"🚨 {latest.title} #Football"
+# --- FAKE WEBSITE (Runs in Background) ---
+app = Flask('')
 
-    final_text = f"{tweet}\n\n📰 More: {latest.link}"
-    
-    # Post
+@app.route('/')
+def home():
+    return "I am alive!"
+
+def run_server():
+    app.run(host='0.0.0.0', port=8080)
+
+def keep_alive():
+    t = Thread(target=run_server)
+    t.start()
+
+# --- BOT LOGIC ---
+def check_news():
+    print("⚽️ STARTING NEWS CHECK...", flush=True)
     try:
-        client.create_tweet(text=final_text)
-        print("✅ Tweeted!")
+        feed = feedparser.parse(RSS_URL)
+        if not feed.entries:
+            print("⚠️ RSS Feed is empty or blocked.", flush=True)
+            return
+
+        latest = feed.entries[0]
+        print(f"🔎 Found article: {latest.title}", flush=True)
+        
+        # AI Rewrite
+        try:
+            print("🤖 Asking AI to rewrite...", flush=True)
+            prompt = f"Rewrite this football headline into a viral tweet under 200 chars with emojis and hashtags. Do not include link: '{latest.title}'"
+            tweet = model.generate_content(prompt).text
+        except Exception as e:
+            print(f"⚠️ AI Error: {e}", flush=True)
+            tweet = f"🚨 {latest.title} #Football"
+
+        final_text = f"{tweet}\n\n📰 More: {latest.link}"
+        
+        # Post
+        try:
+            client.create_tweet(text=final_text)
+            print(f"✅ TWEETED: {final_text}", flush=True)
+        except Exception as e:
+            if "duplicate" in str(e).lower():
+                print("💤 Tweet already exists. Skipping.", flush=True)
+            else:
+                print(f"❌ Twitter Error: {e}", flush=True)
+
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"❌ General Error: {e}", flush=True)
 
+# --- MAIN LOOP ---
 if __name__ == '__main__':
-    keep_alive()  # Start the fake website
+    keep_alive() # Start Website in Background
+    
+    print("🚀 BOT IS STARTING...", flush=True)
+    
     while True:
-        bot_logic() # Run the bot
-        time.sleep(900) # Sleep for 15 mins
+        check_news()
+        print("⏳ Waiting 15 minutes...", flush=True)
+        time.sleep(900)
